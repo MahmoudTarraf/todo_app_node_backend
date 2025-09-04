@@ -1,0 +1,18 @@
+# Ignore environment files
+.env
+
+# Node modules (don't upload these to GitHub)
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Misc
+npm-debug.log*
+
+serviceAccountKey.json

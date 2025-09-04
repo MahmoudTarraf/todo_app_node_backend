@@ -1,0 +1,35 @@
+documentaion for node.js:
+
+first you install node then:
+npm -v
+node -v for installation check
+
+then:
+npm init -y
+npm install express cors body-parser
+node index.js
+
+to clear and repair the node installation:
+✅ Fix Step by Step
+1. Close anything locking the folder
+
+Close your editor/IDE (VS Code, WebStorm, etc.).
+
+Close any terminal that’s inside that project folder.
+
+Then reopen a new PowerShell/Command Prompt as Administrator.
+
+2. Manually delete node_modules and lock file
+
+Run in PowerShell (as admin):
+
+rd /s /q node_modules
+del package-lock.json
+
+
+If Windows still refuses, you can force delete with:
+
+npx rimraf node_modules
+
+3. Clean npm cache
+npm cache clean --force
