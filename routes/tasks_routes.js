@@ -240,7 +240,7 @@ router.post('/addTask', authenticateToken, (req, res) => {
   let taskDeadline = null;
 
   if (taskType === 'oneTime' || (taskType === 'scheduled' && (frequency === 'everyday' || frequency === 'everyweek'))) {
-    taskDeadline = new Date(deadline);
+     taskDeadline = new Date(deadline + "Z"); 
     if (isNaN(taskDeadline)) return res.status(400).json({ message: 'Invalid deadline' });
   } else if (taskType === 'scheduled' && frequency === 'custom') {
     if (!Array.isArray(dates) || dates.length === 0)
@@ -300,15 +300,31 @@ router.put('/updateTask/:id', authenticateToken, (req, res) => {
   const { title, content, frequency, dates, deadline, isCompleted, taskType, taskPriority, fcmToken } = req.body;
   const userId = req.user.id;
 
+  // Convert deadline to UTC before storing
+  let taskDeadline = null;
+  if (deadline) {
+    // assume client sends local ISO string without timezone, e.g., "2025-09-04T09:00"
+    taskDeadline = new Date(deadline + "Z"); // 'Z' treats it as UTC
+    if (isNaN(taskDeadline)) return res.status(400).json({ message: 'Invalid deadline' });
+  }
+
   const query = `UPDATE tasks 
     SET title = ?, content = ?, frequency = ?, dates = ?, deadline = ?, 
         isCompleted = ?, taskType = ?, taskPriority = ?, fcmToken = ?
     WHERE id = ? AND userId = ?`;
 
   const values = [
-    title, content, frequency, JSON.stringify(dates || []),
-    deadline, isCompleted, taskType, taskPriority,
-    fcmToken, taskId, userId,
+    title,
+    content,
+    frequency,
+    JSON.stringify(dates || []),
+    taskDeadline ? taskDeadline.toISOString() : null, // store as UTC ISO string
+    isCompleted,
+    taskType,
+    taskPriority,
+    fcmToken,
+    taskId,
+    userId,
   ];
 
   db.run(query, values, function (err) {
@@ -318,16 +334,5 @@ router.put('/updateTask/:id', authenticateToken, (req, res) => {
   });
 });
 
-// 🔹 Delete task
-router.delete('/deleteTask/:id', authenticateToken, (req, res) => {
-  const taskId = req.params.id;
-  const userId = req.user.id;
-
-  db.run(`DELETE FROM tasks WHERE id = ? AND userId = ?`, [taskId, userId], function (err) {
-    if (err) return res.status(400).json({ message: err.message });
-    if (this.changes === 0) return res.status(404).json({ message: 'Task not found or not owned by user' });
-    res.json({ message: 'Task deleted' });
-  });
-});
 
 export default router;
