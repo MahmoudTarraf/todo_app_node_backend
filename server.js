@@ -20,7 +20,6 @@ import usersRoutes from './routes/users_routes.js';
 import { router as emailRoutes } from './helper/email_service.js';
 
 dotenv.config();
-
 // =======================
 // 🔹 Sequelize + SQLite (AdminJS)
 // =======================
