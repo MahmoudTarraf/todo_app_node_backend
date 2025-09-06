@@ -405,6 +405,7 @@ router.get('/getHomeData', authenticateToken, (req, res) => {
                       streak,
                       upcomingTaskCount,
                       upcomingTaskText,
+                      nextDeadline: row.nextDeadline
                     });
                   }
                 );
