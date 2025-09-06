@@ -170,6 +170,17 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).send('Something broke!');
 });
+// Unprotected home route for cron jobs or simple health check
+app.all("/", async (req, res) => {
+  try {
+    // Here you can add any code you want to run via cron, e.g. cleanup, notifications, etc.
+    
+    res.status(200).send("✅ Cron job route accessed successfully!");
+  } catch (error) {
+    console.error("Error in home route:", error);
+    res.status(500).send("❌ Error occurred while accessing home route.");
+  }
+});
 
 // Start server
 const PORT = process.env.PORT || 3000;
