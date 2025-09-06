@@ -240,7 +240,7 @@ router.post('/addTask', authenticateToken, (req, res) => {
   let taskDeadline = null;
 
   if (taskType === 'oneTime' || (taskType === 'scheduled' && (frequency === 'everyday' || frequency === 'everyweek'))) {
-     taskDeadline = new Date(deadline + "Z"); 
+     taskDeadline = new Date(deadline); 
     if (isNaN(taskDeadline)) return res.status(400).json({ message: 'Invalid deadline' });
   } else if (taskType === 'scheduled' && frequency === 'custom') {
     if (!Array.isArray(dates) || dates.length === 0)
@@ -304,7 +304,7 @@ router.put('/updateTask/:id', authenticateToken, (req, res) => {
   let taskDeadline = null;
   if (deadline) {
     // assume client sends local ISO string without timezone, e.g., "2025-09-04T09:00"
-    taskDeadline = new Date(deadline + "Z"); // 'Z' treats it as UTC
+    taskDeadline = new Date(deadline); // 'Z' treats it as UTC
     if (isNaN(taskDeadline)) return res.status(400).json({ message: 'Invalid deadline' });
   }
 

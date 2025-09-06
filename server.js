@@ -173,7 +173,7 @@ app.use((err, req, res, next) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0';
+const HOST = 'localhost';
 
 sequelize.authenticate().then(() => {
   console.log('✅ Connected to SQLite via Sequelize');
