@@ -12,7 +12,7 @@ const transporter = nodemailer.createTransport({
 });
 
 async function sendVerificationEmail(to, token) {
-  const verificationLink = `https://5bafcca02c5b.ngrok-free.app/verify-email?token=${token}`;
+  const verificationLink = `https://todo-app-node-backend.onrender.com/verify-email?token=${token}`;
   await transporter.sendMail({
     from: '"Tasker App" <malk1milk2@gmail.com>',
     to,

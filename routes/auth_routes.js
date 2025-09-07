@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { promisify } from 'util';
 import crypto from 'crypto';
 import { sendVerificationEmail } from '../helper/email_service.js'; // your helper
 import db from '../db.js';
@@ -330,92 +331,124 @@ router.post("/resetPassword", async (req, res) => {
     }
   );
 });
+// get home data route
 
+const dbGet = promisify(db.get.bind(db));
+const dbRun = promisify(db.run.bind(db));
 
-// Helper to format date as YYYY-MM-DD
-const formatDate = (date) => date.toISOString().split('T')[0];
+const formatDate = (date) => {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return null;
+  return date.toISOString().split('T')[0];
+};
 
-router.get('/getHomeData', authenticateToken, (req, res) => {
+router.get('/getHomeData', authenticateToken, async (req, res) => {
   const userId = req.user.id;
-  const now = new Date(); // current local time
+  const now = new Date();
   const today = formatDate(now);
+  if (!today) return res.status(500).json({ message: 'Invalid current date' });
 
-  db.serialize(() => {
-    let tasksDueToday = 0;
-    let tasksCompleted = 0;
-    let streak = 0;
-    let upcomingTaskCount = 0;
-    let upcomingTaskText = '';
-
-    // 1️⃣ Count tasks due today (not completed)
-    db.get(
-      `SELECT COUNT(*) as count FROM tasks 
-       WHERE userId = ? AND DATE(deadline) = ? AND isCompleted = 0`,
-      [userId, today],
-      (err, row) => {
-        if (err) return res.status(500).json({ message: err.message });
-        tasksDueToday = row.count;
-
-        // 2️⃣ Count tasks completed today
-        db.get(
-          `SELECT COUNT(*) as count FROM tasks 
-           WHERE userId = ? AND DATE(deadline) = ? AND isCompleted = 1`,
-          [userId, today],
-          (err, row) => {
-            if (err) return res.status(500).json({ message: err.message });
-            tasksCompleted = row.count;
-
-            // 3️⃣ Get streak from users table
-            db.get(
-              `SELECT taskStrikes FROM users WHERE id = ?`,
-              [userId],
-              (err, user) => {
-                if (err) return res.status(500).json({ message: err.message });
-                streak = user ? user.taskStrikes : 0;
-
-                // 4️⃣ Count upcoming tasks and get nearest deadline
-                db.get(
-                  `SELECT COUNT(*) as count, MIN(deadline) as nextDeadline 
-                   FROM tasks 
-                   WHERE userId = ? AND isCompleted = 0 AND deadline > ?`,
-                  [userId, now.toISOString()],
-                  (err, row) => {
-                    if (err) return res.status(500).json({ message: err.message });
-
-                    upcomingTaskCount = row.count;
-
-                    if (row.nextDeadline) {
-                      const nextDate = new Date(row.nextDeadline);
-                      const diffMs = nextDate - new Date();
-                      const diffMins = Math.ceil(diffMs / (1000 * 60)); // total minutes
-                      const hours = Math.floor(diffMins / 60);
-                      const minutes = diffMins % 60;
-
-                      let timeText = '';
-                      if (hours > 0) timeText += `${hours} hour${hours > 1 ? 's' : ''} `;
-                      if (minutes > 0) timeText += `${minutes} minute${minutes > 1 ? 's' : ''}`;
-
-                      upcomingTaskText = `You have ${upcomingTaskCount} task${upcomingTaskCount > 1 ? 's' : ''} due in ${timeText.trim()}!`;
-                    }
-
-                    // 5️⃣ Return all data
-                    res.json({
-                      tasksDueToday,
-                      tasksCompleted,
-                      streak,
-                      upcomingTaskCount,
-                      upcomingTaskText,
-                      nextDeadline: row.nextDeadline
-                    });
-                  }
-                );
-              }
-            );
-          }
-        );
-      }
+  try {
+    // 1️⃣ Count today's tasks (completed & not completed)
+    const todayTasks = await dbGet(
+      `SELECT
+          SUM(CASE WHEN DATE(deadline) = DATE(?) AND isCompleted = 0 THEN 1 ELSE 0 END) AS tasksDueToday,
+          SUM(CASE WHEN DATE(deadline) = DATE(?) AND isCompleted = 1 THEN 1 ELSE 0 END) AS tasksCompleted
+       FROM tasks
+       WHERE userId = ?`,
+      [today, today, userId]
     );
-  });
+
+    const tasksDueToday = todayTasks.tasksDueToday || 0;
+    const tasksCompleted = todayTasks.tasksCompleted || 0;
+
+    // 2️⃣ Get user info
+    const user = await dbGet(
+      `SELECT streak, lastTaskDate, lastRewardDate, lastRewardStreak, taskStrikes, remainingUpdates, remainingDeletes
+       FROM users WHERE id = ?`,
+      [userId]
+    );
+
+    let streak = user.streak || 0;
+
+    // 3️⃣ Update streak if user completed a task today
+    if (tasksCompleted > 0) {
+      const yesterday = new Date();
+      yesterday.setDate(now.getDate() - 1);
+      const yesterdayStr = formatDate(yesterday);
+
+      if (user.lastTaskDate === yesterdayStr) {
+        streak += 1; // consecutive day
+      } else if (user.lastTaskDate !== today) {
+        streak = 1; // reset streak
+      }
+
+      // Update user's streak and lastTaskDate
+      await dbRun(
+        `UPDATE users SET streak = ?, lastTaskDate = ? WHERE id = ?`,
+        [streak, today, userId]
+      );
+    }
+
+    // 4️⃣ Reward logic: every 7 days
+    let rewardMessage = '';
+    let reward = null;
+    if (streak > 0 && streak % 7 === 0 && streak > (user.lastRewardStreak || 0) && user.lastRewardDate !== today) {
+      rewardMessage = `🎉 Amazing! You hit a ${streak}-day streak! You earned +3 updates, +3 deletes, and 1 strike removed.`;
+      
+      await dbRun(
+        `UPDATE users
+         SET taskStrikes = CASE WHEN taskStrikes > 0 THEN taskStrikes - 1 ELSE 0 END,
+             remainingUpdates = remainingUpdates + 3,
+             remainingDeletes = remainingDeletes + 3,
+             lastRewardDate = ?,
+             lastRewardStreak = ?
+         WHERE id = ?`,
+        [today, streak, userId]
+      );
+
+      // send reward info to frontend
+      reward = {
+        remainingUpdates: (user.remainingUpdates || 0) + 3,
+        remainingDeletes: (user.remainingDeletes || 0) + 3,
+        taskStrikes: Math.max((user.taskStrikes || 0) - 1, 0)
+      };
+    }
+
+    // 5️⃣ Count upcoming tasks and nearest deadline
+    const nextTask = await dbGet(
+      `SELECT COUNT(*) AS upcomingTaskCount, MIN(deadline) AS nextDeadline
+       FROM tasks
+       WHERE userId = ? AND isCompleted = 0 AND deadline > ?`,
+      [userId, now.toISOString()]
+    );
+
+    let upcomingTaskText = '';
+    if (nextTask.nextDeadline) {
+      const diffMs = new Date(nextTask.nextDeadline) - now;
+      const diffMins = Math.ceil(diffMs / (1000 * 60));
+      const hours = Math.floor(diffMins / 60);
+      const minutes = diffMins % 60;
+      const timeText = `${hours > 0 ? hours + ' hour' + (hours > 1 ? 's ' : ' ') : ''}${minutes > 0 ? minutes + ' minute' + (minutes > 1 ? 's' : '') : ''}`.trim();
+
+      upcomingTaskText = `You have ${nextTask.upcomingTaskCount} task${nextTask.upcomingTaskCount > 1 ? 's' : ''} due in ${timeText}!`;
+    }
+
+    // 6️⃣ Return JSON
+    res.json({
+      tasksDueToday,
+      tasksCompleted,
+      streak,
+      rewardMessage,
+      reward, // <-- send reward info if streak hit 7
+      upcomingTaskCount: nextTask.upcomingTaskCount,
+      upcomingTaskText,
+      nextDeadline: nextTask.nextDeadline
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
 });
 
 export default router;

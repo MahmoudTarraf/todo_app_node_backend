@@ -23,12 +23,19 @@ const initDb = () => {
       remainingUpdates INTEGER DEFAULT 3,
       remainingDeletes INTEGER DEFAULT 3,
       notificationsOn INTEGER DEFAULT 1,
+      lastRewardDate TEXT,
+      lastRewardStreak INTEGER DEFAULT 0,
+      streak INTEGER DEFAULT 0,
+      lastTaskDate TEXT,
       emailVerified INTEGER,
       taskStrikes INTEGER DEFAULT 0
     )
   `);
 
-  db.run(`
+  // Create tasks table
+  db.serialize(()=>
+    {
+    db.run(`
     CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
@@ -36,7 +43,8 @@ const initDb = () => {
       frequency TEXT NOT NULL,
       dates TEXT NOT NULL,
       deadline TEXT,
-      isCompleted INTEGER NOT NULL,
+      deadlineDate TEXT,
+      isCompleted INTEGER NOT NULL DEFAULT 0,
       taskType TEXT NOT NULL,
       taskPriority TEXT NOT NULL,
       userId INTEGER,
@@ -44,6 +52,19 @@ const initDb = () => {
       FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+  
+  // Create index separately for fast queries on userId + deadlineDate
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_tasks_user_date 
+    ON tasks(userId, deadlineDate)
+  `);
+  db.run(`
+  CREATE INDEX IF NOT EXISTS idx_tasks_user_deadline
+  ON tasks(userId, deadline)
+  `);
+
+  });
+
 
   db.run(`
     CREATE TABLE IF NOT EXISTS notes (
